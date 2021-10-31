@@ -3,40 +3,55 @@
 
 typedef struct matrix
 {
-    float** contents;
-	int width;
-	int height;
+    double** contents;
+	int dimension;
 } MATRIX;
 
-MATRIX* make_matrix(int width, int height, float x_axis_val, float y_axis_val){
+MATRIX* make_matrix(int dimension, double init_value){
     MATRIX* matrix = (MATRIX*)malloc(sizeof(MATRIX));
-	matrix->height = height;
-	matrix->width = width;
-	matrix->contents = malloc(height*sizeof(float*));
+	matrix->dimension = dimension;
+	matrix->contents = malloc(dimension*sizeof(double*));
 
-	for(int i = 0; i < height; i++){
-		matrix->contents[i] = malloc(width*sizeof(float));
-		for (int j = 0; j < width; j++){
-			matrix->contents[i][j] = 1.0;
+	for(int i = 0; i < dimension; i++){
+		matrix->contents[i] = malloc(dimension*sizeof(double));
+
+		if (i == 0){
+			for (int j = 0; j < dimension; j++){
+				matrix->contents[i][j] = init_value;
+			}
+		}else{
+			matrix->contents[i][0] = init_value;
 		}
 	}
     return matrix;
 }
 
 
-void print_matrix(float** matrix){
-    for (int i = 0; i < 4; i++){
-        for (int j = 0; j < 4; j++){
-            printf("%f ", matrix[i][j]);
+void print_matrix(MATRIX* matrix){
+    for (int i = 0; i < matrix->dimension; i++){
+        for (int j = 0; j < matrix->dimension; j++){
+            printf("%f ", matrix->contents[i][j]);
         }
         printf("\n");
     }
+	printf("\n");
+}
+
+void process_square(MATRIX* matrix, int y, int x){
+	int value = (matrix->contents[y][x-1] + 
+		matrix->contents[y-1][x] + 
+		matrix->contents[y][x+1] + 
+		matrix->contents[y+1][x]) / 4.0;
+
+	matrix->contents[y][x] = value;
 }
 
 int main(void){
-    MATRIX* matrix = make_matrix(4,4);
+	MATRIX* matrix = make_matrix(4, 2.0);
 	//float x[4][4] = (float (*)[4])matrix->contents;
-    print_matrix(matrix->contents);
+	print_matrix(matrix);
+	process_square(matrix, 1, 1);
+	print_matrix(matrix);
 	free(matrix);
-    return 0;
+	return 0;
 }
