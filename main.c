@@ -16,7 +16,7 @@ typedef struct thread_args
 	int* changes_count;
 } THREAD_ARGS;
 
-MATRIX* make_matrix(int dimension, double init_value){
+MATRIX* make_matrix(int dimension, double init_value, double default_value){
     MATRIX* matrix = (MATRIX*)malloc(sizeof(MATRIX));
 	matrix->dimension = dimension;
 	matrix->contents = malloc(dimension*sizeof(double*));
@@ -24,12 +24,20 @@ MATRIX* make_matrix(int dimension, double init_value){
 	for(int i = 0; i < dimension; i++){
 		matrix->contents[i] = malloc(dimension*sizeof(double));
 
-		if (i == 0){
-			for (int j = 0; j < dimension; j++){
+		// if (i == 0){
+		// 	for (int j = 0; j < dimension; j++){
+		// 		matrix->contents[i][j] = init_value;
+		// 	}
+		// }else{
+		// 	matrix->contents[i][0] = init_value;
+		// }
+		for (int j = 0; j < dimension; j++){
+			if (i == 0 || j == 0){
 				matrix->contents[i][j] = init_value;
 			}
-		}else{
-			matrix->contents[i][0] = init_value;
+			else if (i != dimension-1 && j != dimension-1){
+				matrix->contents[i][j] = default_value;
+			}
 		}
 	}
     return matrix;
@@ -59,26 +67,28 @@ void print_matrix(MATRIX* matrix){
 }
 
 int process_square(MATRIX* source, MATRIX* destination, int y, int x){
-	printf("Source: \n");
-	print_matrix(source);
-	printf("Destination: \n");
-	print_matrix(destination);
-	printf("Co-ords: %d, %d\n", x, y);
+	// printf("Source: \n");
+	// print_matrix(source);
+	// printf("Destination: \n");
+	// print_matrix(destination);
+	printf("Working on Co-ords: %d, %d\n", x, y);
 	if (source->contents[y][x] != destination->contents[y][x]){
-		int value = (source->contents[y][x-1] + 
+		double value = (source->contents[y][x-1] + 
 			source->contents[y-1][x] + 
 			source->contents[y][x+1] + 
 			source->contents[y+1][x]) / 4.0;
 
 		destination->contents[y][x] = value;
+		printf("Changes made.\n");
 		return 1;
 	} else {
+		printf("Changes already made.\n");
 		return 0;
 	}
 }
 
 int is_matrix_complete(MATRIX* matrix, double precision){
-	int goal_count = (matrix->dimension-1)*(matrix->dimension-1);
+	int goal_count = (matrix->dimension-2)*(matrix->dimension-2);
 	int current_count = 0;
 	for(int i = 1; i < matrix->dimension-1; i++){
 		for (int j = 1; j < matrix->dimension-1; j++){
@@ -92,24 +102,26 @@ int is_matrix_complete(MATRIX* matrix, double precision){
 
 void* thread_process(void* args){
 	THREAD_ARGS* t_args = (THREAD_ARGS*)args;
-	int max_changes_count = (t_args->source->dimension-1)*(t_args->source->dimension-1);
-	while (*t_args->changes_count != max_changes_count)
+	int max_changes_count = (t_args->source->dimension-2)*(t_args->source->dimension-2);
+	while (*t_args->changes_count <= max_changes_count)
 	{
+		
+		// for(int i = 1; i < t_args->source->dimension-1; i++){
+		// 	for (int j = 1; j < t_args->source->dimension-1; j++){
+		// 		if(process_square(t_args->source, t_args->destination, i, j)){
+		// 			(*t_args->changes_count)++;
+		// 		}
+		// 	}
+		// }
+		
 		printf("Changes Count: %d\n", *t_args->changes_count);
-		for(int i = 1; i < t_args->source->dimension-1; i++){
-			for (int j = 1; j < t_args->source->dimension-1; j++){
-				if(process_square(t_args->source, t_args->destination, i, j)){
-					(*t_args->changes_count)++;
-				}
-			}
-		}
 		sleep(2);
 	}
 }
 
 int main(void){
-	MATRIX* matrix = make_matrix(4, 2.0);
-	MATRIX* destination = copy_matrix(matrix);
+	MATRIX* matrix = make_matrix(4, 2.0, 0.0);
+	MATRIX* destination = make_matrix(4, 2.0, -1.0);
 	THREAD_ARGS* t_args = (THREAD_ARGS*)malloc(sizeof(THREAD_ARGS));
 	t_args->source = matrix;
 	t_args->destination = destination;
