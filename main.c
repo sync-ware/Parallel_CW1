@@ -14,6 +14,9 @@ typedef struct thread_args
 	MATRIX* source;
 	MATRIX* destination;
 	int* changes_count;
+	int thread_count;
+	int start_index;
+	long* thread_id;
 } THREAD_ARGS;
 
 MATRIX* make_matrix(int dimension, double init_value, double default_value){
@@ -71,7 +74,7 @@ int process_square(MATRIX* source, MATRIX* destination, int y, int x){
 	// print_matrix(source);
 	// printf("Destination: \n");
 	// print_matrix(destination);
-	printf("Working on Co-ords: %d, %d\n", x, y);
+	//printf("Working on Co-ords: %d, %d\n", x, y);
 	if (source->contents[y][x] != destination->contents[y][x]){
 		double value = (source->contents[y][x-1] + 
 			source->contents[y-1][x] + 
@@ -79,10 +82,10 @@ int process_square(MATRIX* source, MATRIX* destination, int y, int x){
 			source->contents[y+1][x]) / 4.0;
 
 		destination->contents[y][x] = value;
-		printf("Changes made.\n");
+		//printf("Changes made.\n");
 		return 1;
 	} else {
-		printf("Changes already made.\n");
+		//printf("Changes already made.\n");
 		return 0;
 	}
 }
@@ -102,37 +105,41 @@ int is_matrix_complete(MATRIX* matrix, double precision){
 
 void* thread_process(void* args){
 	THREAD_ARGS* t_args = (THREAD_ARGS*)args;
-	int max_changes_count = (t_args->source->dimension-2)*(t_args->source->dimension-2);
-	while (*t_args->changes_count <= max_changes_count)
-	{
-		
-		// for(int i = 1; i < t_args->source->dimension-1; i++){
-		// 	for (int j = 1; j < t_args->source->dimension-1; j++){
-		// 		if(process_square(t_args->source, t_args->destination, i, j)){
-		// 			(*t_args->changes_count)++;
-		// 		}
-		// 	}
-		// }
-		
-		printf("Changes Count: %d\n", *t_args->changes_count);
-		sleep(2);
+	int s_index = t_args->start_index;
+	int max_cells = (t_args->source->dimension-2)*(t_args->source->dimension-2); //4
+	while(s_index <= max_cells-1){
+		int i = (s_index%(t_args->source->dimension-2))+1;
+		int j = (s_index/(t_args->source->dimension-2))+1;
+		printf("Thread %ld working on (%d, %d)\n", *t_args->thread_id, j, i);
+		process_square(t_args->source, t_args->destination, j, i);
+		s_index += t_args->thread_count;
 	}
 }
 
-int main(void){
-	MATRIX* matrix = make_matrix(4, 2.0, 0.0);
-	MATRIX* destination = make_matrix(4, 2.0, -1.0);
+THREAD_ARGS* make_thread_args(MATRIX* source, MATRIX* destination, int thread_count, int start_index, long* thread_id){
 	THREAD_ARGS* t_args = (THREAD_ARGS*)malloc(sizeof(THREAD_ARGS));
-	t_args->source = matrix;
+	t_args->source = source;
 	t_args->destination = destination;
-	int changes_count = 0;
-	t_args->changes_count = &changes_count;
-	pthread_t th1;
-	pthread_t th2;
-	pthread_create(&th1, NULL, thread_process, (void*)t_args);
-	pthread_create(&th2, NULL, thread_process, (void*)t_args);
-	pthread_join(th1, NULL);
-	pthread_join(th2, NULL);
+	t_args->start_index = start_index;
+	t_args->thread_count = thread_count;
+	t_args->thread_id = thread_id;
+	return t_args;
+}
+
+int main(void){
+	MATRIX* source = make_matrix(10, 2.0, 0.0);
+	MATRIX* destination = make_matrix(10, 2.0, -1.0);
+
+	int thread_count = 2;
+	pthread_t threads[thread_count];
+	for(int c = 0; c < thread_count; c++){
+		pthread_create(&threads[c], NULL, thread_process, 
+			(void*)make_thread_args(source, destination, thread_count, c, &threads[c]));
+	}
+
+	for(int c = 0; c < thread_count; c++){
+		pthread_join(threads[c], NULL);
+	}
 
 	print_matrix(destination);
 	return 0;
