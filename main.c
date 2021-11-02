@@ -166,24 +166,34 @@ int str_array_find(char* arr[], int size, char* string){
 	return -1;
 }
 
-int str_to_int(char* string){
-	int length = strlen(string);
-	int output = 0;
-	for(int x = 0; x < length; x++){
-		output += (string[x] - 48)*((int)pow(10, (length-1)-x));
-	}
-	return output;
-}
-
 int main(int argc, char* argv[]){
-
-	clock_t t;
-	t = clock();
-
 	int matrix_dimension = 4;
 	double default_value = 1.0;
 	double precision = 0.01;
 	int thread_count = 2;
+
+	int dim_found = str_array_find(argv, argc, "-d");
+	int def_val_found = str_array_find(argv, argc, "-v");
+	int prec_found = str_array_find(argv, argc, "-p");
+	int t_count_found = str_array_find(argv, argc, "-t");
+
+	char *eptr;
+
+	if (dim_found > -1){
+		matrix_dimension = atoi(argv[dim_found+1]);
+	}
+	if (def_val_found > 1){
+		default_value = strtod(argv[def_val_found+1], &eptr);
+	}
+	if (prec_found > -1){
+		precision = strtod(argv[prec_found+1], &eptr);
+	}
+	if (t_count_found > -1){
+		thread_count = atoi(argv[t_count_found+1]);
+	}
+
+	clock_t t;
+	t = clock();
 
 	MATRIX* source = make_matrix(matrix_dimension, default_value, 0.0);
 	MATRIX* destination = make_matrix(matrix_dimension, default_value, -1.0);

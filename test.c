@@ -13,6 +13,6 @@ int str_to_int(char* string){
 }
 
 int main(void){
-    printf("%d\n", str_to_int("2423234"));
+    printf("%d\n", atoi("2423234"));
     return 0;
 }
