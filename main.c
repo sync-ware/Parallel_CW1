@@ -3,6 +3,8 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
+#include <string.h>
+#include <math.h>
 
 typedef struct matrix
 {
@@ -155,19 +157,40 @@ int array_sum(int arr[], int size){
 	return sum;
 }
 
-int main(void){
+int str_array_find(char* arr[], int size, char* string){
+	for(int x = 0; x < size; x++){
+		if(strcmp(arr[x], string) == 0){
+			return x;
+		}
+	}
+	return -1;
+}
+
+int str_to_int(char* string){
+	int length = strlen(string);
+	int output = 0;
+	for(int x = 0; x < length; x++){
+		output += (string[x] - 48)*((int)pow(10, (length-1)-x));
+	}
+	return output;
+}
+
+int main(int argc, char* argv[]){
+
 	clock_t t;
 	t = clock();
-	MATRIX* source = make_matrix(100, 1.0, 0.0);
-	MATRIX* destination = make_matrix(100, 1.0, -1.0);
 
+	int matrix_dimension = 4;
+	double default_value = 1.0;
+	double precision = 0.01;
 	int thread_count = 2;
+
+	MATRIX* source = make_matrix(matrix_dimension, default_value, 0.0);
+	MATRIX* destination = make_matrix(matrix_dimension, default_value, -1.0);
+
+	
 	pthread_t threads[thread_count];
 	int thread_states[thread_count];
-
-	// for(int c = 0; c < thread_count; c++){
-	// 	thread_states[c] = 1;
-	// }
 
 	for(int c = 0; c < thread_count; c++){
 		thread_states[c] = thread_active;
@@ -180,11 +203,11 @@ int main(void){
 			printf("Checking Matrix.\n");
 			//print_matrix(destination);
 			//sleep(2);
-			if (!is_matrix_complete(source, destination, 0.01)){
+			if (!is_matrix_complete(source, destination, precision)){
 				free(source);
 				source = copy_matrix(destination);
 				free(destination);
-				destination = make_matrix(100, 1.0, -1.0);
+				destination = make_matrix(matrix_dimension, default_value, -1.0);
 				for(int c = 0; c < thread_count; c++){
 					thread_states[c] = thread_active;
 				}
@@ -199,7 +222,7 @@ int main(void){
 		pthread_join(threads[c], NULL);
 	}
 
-	print_matrix(destination);
+	//print_matrix(destination);
 
 	t = clock() - t;
 	double time_taken = ((double)t)/CLOCKS_PER_SEC; // calculate the elapsed time
