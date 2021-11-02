@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <time.h>
 
 typedef struct matrix
 {
@@ -17,7 +18,16 @@ typedef struct thread_args
 	int thread_count;
 	int start_index;
 	long* thread_id;
+	int* thread_state;
 } THREAD_ARGS;
+
+int processing_active = 1;
+
+enum thread_state{
+	thread_active = 1,
+	thread_waiting = 2,
+	thread_finished = 3
+};
 
 MATRIX* make_matrix(int dimension, double init_value, double default_value){
     MATRIX* matrix = (MATRIX*)malloc(sizeof(MATRIX));
@@ -27,13 +37,6 @@ MATRIX* make_matrix(int dimension, double init_value, double default_value){
 	for(int i = 0; i < dimension; i++){
 		matrix->contents[i] = malloc(dimension*sizeof(double));
 
-		// if (i == 0){
-		// 	for (int j = 0; j < dimension; j++){
-		// 		matrix->contents[i][j] = init_value;
-		// 	}
-		// }else{
-		// 	matrix->contents[i][0] = init_value;
-		// }
 		for (int j = 0; j < dimension; j++){
 			if (i == 0 || j == 0){
 				matrix->contents[i][j] = init_value;
@@ -58,6 +61,8 @@ MATRIX* copy_matrix(MATRIX* matrix){
 	}
 	return copy;
 }
+
+//int threads_finished = 0;
 
 void print_matrix(MATRIX* matrix){
     for (int i = 0; i < matrix->dimension; i++){
@@ -90,12 +95,12 @@ int process_square(MATRIX* source, MATRIX* destination, int y, int x){
 	}
 }
 
-int is_matrix_complete(MATRIX* matrix, double precision){
-	int goal_count = (matrix->dimension-2)*(matrix->dimension-2);
+int is_matrix_complete(MATRIX* source, MATRIX* destination, double precision){
+	int goal_count = (source->dimension-2)*(source->dimension-2);
 	int current_count = 0;
-	for(int i = 1; i < matrix->dimension-1; i++){
-		for (int j = 1; j < matrix->dimension-1; j++){
-			if (matrix->contents[i][j] <= precision){
+	for(int i = 1; i < source->dimension-1; i++){
+		for (int j = 1; j < source->dimension-1; j++){
+			if ((destination->contents[i][j] - source->contents[i][j]) <= precision){
 				current_count++;
 			}
 		}
@@ -105,36 +110,89 @@ int is_matrix_complete(MATRIX* matrix, double precision){
 
 void* thread_process(void* args){
 	THREAD_ARGS* t_args = (THREAD_ARGS*)args;
-	int s_index = t_args->start_index;
-	int max_cells = (t_args->source->dimension-2)*(t_args->source->dimension-2); //4
-	while(s_index <= max_cells-1){
-		int i = (s_index%(t_args->source->dimension-2))+1;
-		int j = (s_index/(t_args->source->dimension-2))+1;
-		printf("Thread %ld working on (%d, %d)\n", *t_args->thread_id, j, i);
-		process_square(t_args->source, t_args->destination, j, i);
-		s_index += t_args->thread_count;
+	int s_index = 0;
+	int max_cells = (t_args->source->dimension-2)*(t_args->source->dimension-2);
+	printf("Thread %ld Started.\n", *t_args->thread_id);
+	while(*t_args->thread_state == thread_active){
+		printf("Thread %ld Active.\n", *t_args->thread_id);
+		s_index = t_args->start_index;
+		while(s_index <= max_cells-1){
+			int i = (s_index%(t_args->source->dimension-2))+1;
+			int j = (s_index/(t_args->source->dimension-2))+1;
+			//printf("Thread %ld working on (%d, %d)\n", *t_args->thread_id, j, i);
+			process_square(t_args->source, t_args->destination, j, i);
+			s_index += t_args->thread_count;
+		}
+
+		*t_args->thread_state = thread_waiting;
+		printf("Thread %ld Waiting.\n", *t_args->thread_id);
+		while(*t_args->thread_state == thread_waiting){ 
+			if (!processing_active){
+				*t_args->thread_state = thread_finished;
+				printf("Thread %ld Finished.\n", *t_args->thread_id);
+			}
+		}
 	}
 }
 
-THREAD_ARGS* make_thread_args(MATRIX* source, MATRIX* destination, int thread_count, int start_index, long* thread_id){
+THREAD_ARGS* make_thread_args(MATRIX* source, MATRIX* destination, int thread_count, int start_index, long* thread_id,
+	int* thread_state){
 	THREAD_ARGS* t_args = (THREAD_ARGS*)malloc(sizeof(THREAD_ARGS));
 	t_args->source = source;
 	t_args->destination = destination;
 	t_args->start_index = start_index;
 	t_args->thread_count = thread_count;
 	t_args->thread_id = thread_id;
+	t_args->thread_state = thread_state;
 	return t_args;
 }
 
+int array_sum(int arr[], int size){
+	int sum = 0;
+	for (int x = 0; x < size; x++){
+		sum += arr[x];
+	}
+	return sum;
+}
+
 int main(void){
-	MATRIX* source = make_matrix(10, 2.0, 0.0);
-	MATRIX* destination = make_matrix(10, 2.0, -1.0);
+	clock_t t;
+	t = clock();
+	MATRIX* source = make_matrix(100, 1.0, 0.0);
+	MATRIX* destination = make_matrix(100, 1.0, -1.0);
 
 	int thread_count = 2;
 	pthread_t threads[thread_count];
+	int thread_states[thread_count];
+
+	// for(int c = 0; c < thread_count; c++){
+	// 	thread_states[c] = 1;
+	// }
+
 	for(int c = 0; c < thread_count; c++){
+		thread_states[c] = thread_active;
 		pthread_create(&threads[c], NULL, thread_process, 
-			(void*)make_thread_args(source, destination, thread_count, c, &threads[c]));
+			(void*)make_thread_args(source, destination, thread_count, c, &threads[c], &thread_states[c]));
+	}
+	
+	while(processing_active){
+		if (array_sum(thread_states, thread_count) == thread_count*thread_waiting){
+			printf("Checking Matrix.\n");
+			//print_matrix(destination);
+			//sleep(2);
+			if (!is_matrix_complete(source, destination, 0.01)){
+				free(source);
+				source = copy_matrix(destination);
+				free(destination);
+				destination = make_matrix(100, 1.0, -1.0);
+				for(int c = 0; c < thread_count; c++){
+					thread_states[c] = thread_active;
+				}
+			} else {
+				printf("Matrix complete.\n");
+				processing_active = 0;
+			}
+		}
 	}
 
 	for(int c = 0; c < thread_count; c++){
@@ -142,5 +200,10 @@ int main(void){
 	}
 
 	print_matrix(destination);
+
+	t = clock() - t;
+	double time_taken = ((double)t)/CLOCKS_PER_SEC; // calculate the elapsed time
+	printf("The program took %f seconds to execute.\n", time_taken);
+
 	return 0;
 }
