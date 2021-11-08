@@ -7,15 +7,13 @@
 #include <math.h>
 
 // A square nxn matrix that contains the elements of the matrix and the dimension n.
-typedef struct matrix
-{
+typedef struct matrix{
     double** contents;
 	int dimension;
 } MATRIX;
 
 // Structure that holds the arguments we want to pass to the thread process.
-typedef struct thread_args
-{
+typedef struct thread_args{
 	MATRIX* source;
 	MATRIX* destination;
 	int* changes_count;
@@ -23,7 +21,6 @@ typedef struct thread_args
 	int start_index;
 	long* thread_id;
 	int* thread_state;
-	double precision;
 } THREAD_ARGS;
 
 // Holds the processing state of main.
@@ -91,7 +88,7 @@ void print_matrix(MATRIX* matrix){
 
 // Process a value at position (x,y) in the source matrix and write it to the destination matrix.
 // Returns 1 if succesful, 0 if the value has already been changed.
-int process_square(MATRIX* source, MATRIX* destination, int y, int x) {
+int process_square(MATRIX* source, MATRIX* destination, int y, int x){
 	double value = (source->contents[y][x-1] + 
 		source->contents[y-1][x] + 
 		source->contents[y][x+1] + 
@@ -204,6 +201,16 @@ int str_array_find(char* arr[], int size, char* string){
 	return -1;
 }
 
+void print_diag_values(MATRIX* matrix){
+	for(int i = 0; i < matrix->dimension; i++){
+		for (int j = 0; j < matrix->dimension; j++){
+			if (i == j){
+				printf("%d,%f\n", i, matrix->contents[i][j]);
+			}
+		}
+	}
+}
+
 int main(int argc, char* argv[]){
 	// Defaults for arguments
 	int matrix_dimension = 4;
@@ -239,7 +246,7 @@ int main(int argc, char* argv[]){
 	// Set up source matrix.
 	MATRIX* source = make_matrix(matrix_dimension, default_value, 0.0);
 	// Set up destination, note that all inner values are set to -1, so that they are different to source.
-	MATRIX* destination = make_matrix(matrix_dimension, default_value, -1.0);
+	MATRIX* destination = make_matrix(matrix_dimension, default_value, 0.0);
 
 	// Init threads and their individual states.
 	pthread_t threads[thread_count];
@@ -284,13 +291,21 @@ int main(int argc, char* argv[]){
 		pthread_join(threads[c], NULL);
 	}
 
-	//print_matrix(destination);
+	if (matrix_dimension <= 10){
+		print_matrix(destination);
+	}
+	
 	pthread_mutex_destroy(&lock);
 	
 	gettimeofday(&end, NULL);
 	double seconds = (double) end.tv_sec - start.tv_sec;
 	double micros = (double) (end.tv_usec - start.tv_usec)/1000000;
-	printf("The program took %f seconds to execute.\n", seconds + micros);
+	printf("Matrix size: %d\n", matrix_dimension);
+	printf("Initial value: %f\n", default_value);
+	printf("Target precision: %f\n", precision);
+	printf("Number of threads: %d\n", thread_count);
+	printf("Processing time: %f seconds\n", seconds + micros);
 
+	//print_diag_values(source);
 	return 0;
 }
