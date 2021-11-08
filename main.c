@@ -2,11 +2,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <time.h>
+#include <sys/time.h>
 #include <string.h>
 #include <math.h>
 
-// TODO: Investigate why adding more threads = slower performance, perhaps it is due to summing all the thread states. Maybe try using a mutex to count how many threads have finished.
 // A square nxn matrix that contains the elements of the matrix and the dimension n.
 typedef struct matrix
 {
@@ -24,10 +23,17 @@ typedef struct thread_args
 	int start_index;
 	long* thread_id;
 	int* thread_state;
+	double precision;
 } THREAD_ARGS;
 
 // Holds the processing state of main.
 int processing_active = 1;
+
+int thread_waiting_counter = 0;
+int completed_cells = 0;
+pthread_mutex_t lock;
+
+double precision = 0.01;
 
 // Represents the different states the thread can be in.
 enum thread_state{
@@ -85,17 +91,17 @@ void print_matrix(MATRIX* matrix){
 
 // Process a value at position (x,y) in the source matrix and write it to the destination matrix.
 // Returns 1 if succesful, 0 if the value has already been changed.
-int process_square(MATRIX* source, MATRIX* destination, int y, int x){
-	if (source->contents[y][x] != destination->contents[y][x]){
-		double value = (source->contents[y][x-1] + 
-			source->contents[y-1][x] + 
-			source->contents[y][x+1] + 
-			source->contents[y+1][x]) / 4.0;
+int process_square(MATRIX* source, MATRIX* destination, int y, int x) {
+	double value = (source->contents[y][x-1] + 
+		source->contents[y-1][x] + 
+		source->contents[y][x+1] + 
+		source->contents[y+1][x]) / 4.0;
 
+	if (value-source->contents[y][x] > precision) {
 		destination->contents[y][x] = value;
-		return 1;
-	} else {
 		return 0;
+	} else { 
+		return 1;
 	}
 }
 
@@ -122,30 +128,35 @@ void* thread_process(void* args){
 	int s_index = 0;
 	// Number of cells that can be processed, the area of cells not part of the border.
 	int max_cells = (t_args->source->dimension-2)*(t_args->source->dimension-2);
-	printf("Thread %ld Started.\n", *t_args->thread_id);
+	////printf("Thread %ld Started.\n", *t_args->thread_id);
 	// If the thread is active, we can start to process cells.
 	while(*t_args->thread_state == thread_active){
-		printf("Thread %ld Active.\n", *t_args->thread_id);
+		int finished_cells = 0;
+		////printf("Thread %ld Active.\n", *t_args->thread_id);
 		s_index = t_args->start_index; // Set the start index x, depending on the thread number.
 		while(s_index <= max_cells-1){ // While the current index is less than the maximum index.
 			// Convert the index to 2 dimensions.
 			int j = (s_index%(t_args->source->dimension-2))+1;
 			int i = (s_index/(t_args->source->dimension-2))+1;
-			//printf("Thread %ld working on (%d, %d)\n", *t_args->thread_id, j, i);
-			process_square(t_args->source, t_args->destination, i, j);
+			////printf("Thread %ld working on (%d, %d)\n", *t_args->thread_id, j, i);
+			finished_cells += process_square(t_args->source, t_args->destination, i, j);
 			// Increment by the number of threads n, this will be the next cell for the thread to process.
 			s_index += t_args->thread_count;
 		}
 
 		// Thread will now be placed in a waiting state.
 		*t_args->thread_state = thread_waiting;
-		printf("Thread %ld Waiting.\n", *t_args->thread_id);
+		pthread_mutex_lock(&lock);
+		thread_waiting_counter++;
+		completed_cells += finished_cells;
+		pthread_mutex_unlock(&lock);
+		//printf("Thread %ld Waiting.\n", *t_args->thread_id);
 		// While the thread is waiting, the main thread will check if the matrix is complete.
 		while(*t_args->thread_state == thread_waiting){ 
 			if (!processing_active){ // Check to see if main has stopped processing.
 				// Then we can break the while loops by changing the thread state to finished.
 				*t_args->thread_state = thread_finished;
-				printf("Thread %ld Finished.\n", *t_args->thread_id);
+				//printf("Thread %ld Finished.\n", *t_args->thread_id);
 			}
 		}
 	}
@@ -162,6 +173,16 @@ THREAD_ARGS* make_thread_args(MATRIX* source, MATRIX* destination, int thread_co
 	t_args->thread_id = thread_id;
 	t_args->thread_state = thread_state;
 	return t_args;
+}
+
+void free_matrix(MATRIX* matrix){
+	for (int i = 0; i < matrix->dimension; i++){
+		
+		free(matrix->contents[i]);
+		
+	}
+	free(matrix->contents);
+	free(matrix);
 }
 
 // Calculate the sum of an integer array.
@@ -187,7 +208,6 @@ int main(int argc, char* argv[]){
 	// Defaults for arguments
 	int matrix_dimension = 4;
 	double default_value = 1.0;
-	double precision = 0.01;
 	int thread_count = 2;
 
 	// Check to see if we have any arguments.
@@ -213,9 +233,9 @@ int main(int argc, char* argv[]){
 	}
 
 	// To measure performance.
-	clock_t t;
-	t = clock();
-
+	
+	struct timeval start, end;
+	gettimeofday(&start, NULL);
 	// Set up source matrix.
 	MATRIX* source = make_matrix(matrix_dimension, default_value, 0.0);
 	// Set up destination, note that all inner values are set to -1, so that they are different to source.
@@ -225,6 +245,8 @@ int main(int argc, char* argv[]){
 	pthread_t threads[thread_count];
 	int thread_states[thread_count];
 
+	pthread_mutex_init(&lock, NULL);
+
 	// Activate each thread, set them all as active.
 	for(int c = 0; c < thread_count; c++){
 		thread_states[c] = thread_active;
@@ -232,25 +254,26 @@ int main(int argc, char* argv[]){
 			(void*)make_thread_args(source, destination, thread_count, c, &threads[c], &thread_states[c]));
 	}
 	
+	int max_cells = (source->dimension-2)*(source->dimension-2);
 	// While we are processing.
 	while(processing_active){
-		// Check to see if all threads are in the waiting stage by summing the values of the thread states.
-		if (array_sum(thread_states, thread_count) == thread_count*thread_waiting){
-			printf("Checking Matrix.\n");
-			//print_matrix(destination);
-			//sleep(2);
+		// Check to see if all threads are in the waiting stage
+		if (thread_waiting_counter == thread_count){
+			//printf("Checking Matrix.\n");
+			
 			// Check to see if the matrix is complete.
-			if (!is_matrix_complete(source, destination, precision)){
+			if (max_cells != completed_cells){
 				// If it's not complete, re-assign our source and destination matrices and set the threads to active.
-				free(source);
+				free_matrix(source);
 				source = copy_matrix(destination);
-				free(destination);
-				destination = make_matrix(matrix_dimension, default_value, -1.0);
+				
+				thread_waiting_counter = 0;
+				completed_cells = 0;
 				for(int c = 0; c < thread_count; c++){
 					thread_states[c] = thread_active;
 				}
 			} else {
-				printf("Matrix complete.\n");
+				//printf("Matrix complete.\n");
 				processing_active = 0; // Stop processing.
 			}
 		}
@@ -261,11 +284,13 @@ int main(int argc, char* argv[]){
 		pthread_join(threads[c], NULL);
 	}
 
-	print_matrix(destination);
-
-	t = clock() - t;
-	double time_taken = ((double)t)/CLOCKS_PER_SEC; // Calculate the elapsed time
-	printf("The program took %f seconds to execute.\n", time_taken);
+	//print_matrix(destination);
+	pthread_mutex_destroy(&lock);
+	
+	gettimeofday(&end, NULL);
+	double seconds = (double) end.tv_sec - start.tv_sec;
+	double micros = (double) (end.tv_usec - start.tv_usec)/1000000;
+	printf("The program took %f seconds to execute.\n", seconds + micros);
 
 	return 0;
 }
