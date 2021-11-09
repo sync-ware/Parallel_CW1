@@ -104,7 +104,7 @@ int process_square(MATRIX* source, MATRIX* destination, int y, int x){
 
 // Checks the destination matrix to see if the difference in the values between it and the source matrix is less than
 // the precision.
-int is_matrix_complete(MATRIX* source, MATRIX* destination, double precision){
+int is_matrix_complete(MATRIX* source, MATRIX* destination){
 	int goal_count = (source->dimension-2)*(source->dimension-2);
 	int current_count = 0;
 	for(int i = 1; i < source->dimension-1; i++){
@@ -225,7 +225,7 @@ int main(int argc, char* argv[]){
 
 	char *eptr;
 
-	// If we fo have arguments, start setting up our variables.
+	// If we have arguments, start setting up our variables.
 	if (dim_found > -1){
 		matrix_dimension = atoi(argv[dim_found+1]);
 	}
@@ -247,55 +247,69 @@ int main(int argc, char* argv[]){
 	MATRIX* source = make_matrix(matrix_dimension, default_value, 0.0);
 	// Set up destination, note that all inner values are set to -1, so that they are different to source.
 	MATRIX* destination = make_matrix(matrix_dimension, default_value, 0.0);
-
-	// Init threads and their individual states.
-	pthread_t threads[thread_count];
-	int thread_states[thread_count];
-
-	pthread_mutex_init(&lock, NULL);
-
-	// Activate each thread, set them all as active.
-	for(int c = 0; c < thread_count; c++){
-		thread_states[c] = thread_active;
-		pthread_create(&threads[c], NULL, thread_process, 
-			(void*)make_thread_args(source, destination, thread_count, c, &threads[c], &thread_states[c]));
-	}
-	
 	int max_cells = (source->dimension-2)*(source->dimension-2);
-	// While we are processing.
-	while(processing_active){
-		// Check to see if all threads are in the waiting stage
-		if (thread_waiting_counter == thread_count){
-			//printf("Checking Matrix.\n");
-			
-			// Check to see if the matrix is complete.
-			if (max_cells != completed_cells){
-				// If it's not complete, re-assign our source and destination matrices and set the threads to active.
-				free_matrix(source);
-				source = copy_matrix(destination);
+
+	if (thread_count > 0){
+	// Init threads and their individual states.
+		pthread_t threads[thread_count];
+		int thread_states[thread_count];
+
+		pthread_mutex_init(&lock, NULL);
+
+		// Activate each thread, set them all as active.
+		for(int c = 0; c < thread_count; c++){
+			thread_states[c] = thread_active;
+			pthread_create(&threads[c], NULL, thread_process, 
+				(void*)make_thread_args(source, destination, thread_count, c, &threads[c], &thread_states[c]));
+		}
+		
+		// While we are processing.
+		while(processing_active){
+			// Check to see if all threads are in the waiting stage
+			if (thread_waiting_counter == thread_count){
+				//printf("Checking Matrix.\n");
 				
-				thread_waiting_counter = 0;
-				completed_cells = 0;
-				for(int c = 0; c < thread_count; c++){
-					thread_states[c] = thread_active;
+				// Check to see if the matrix is complete.
+				if (max_cells != completed_cells){
+					// If it's not complete, re-assign our source and destination matrices and set the threads to active.
+					free_matrix(source);
+					source = copy_matrix(destination);
+					
+					thread_waiting_counter = 0;
+					completed_cells = 0;
+					for(int c = 0; c < thread_count; c++){
+						thread_states[c] = thread_active;
+					}
+				} else {
+					//printf("Matrix complete.\n");
+					processing_active = 0; // Stop processing.
 				}
-			} else {
-				//printf("Matrix complete.\n");
-				processing_active = 0; // Stop processing.
 			}
 		}
-	}
 
-	// Join our threads back if we have stopped processing.
-	for(int c = 0; c < thread_count; c++){
-		pthread_join(threads[c], NULL);
-	}
+		// Join our threads back if we have stopped processing.
+		for(int c = 0; c < thread_count; c++){
+			pthread_join(threads[c], NULL);
+		}
 
-	if (matrix_dimension <= 10){
-		print_matrix(destination);
+		if (matrix_dimension <= 10){
+			print_matrix(destination);
+		}
+		
+		pthread_mutex_destroy(&lock);
+	}else{
+
+		while(completed_cells != max_cells){
+			completed_cells = 0;
+			for(int i = 1; i < source->dimension-1; i++){
+				for(int j = 1; j < source->dimension-1; j++){
+					completed_cells+= process_square(source, destination, j, i);
+				}
+			}
+			free_matrix(source);
+			source = copy_matrix(destination);
+		}
 	}
-	
-	pthread_mutex_destroy(&lock);
 	
 	gettimeofday(&end, NULL);
 	double seconds = (double) end.tv_sec - start.tv_sec;
