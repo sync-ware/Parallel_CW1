@@ -29,6 +29,7 @@ int processing_active = 1;
 int thread_waiting_counter = 0;
 int completed_cells = 0;
 pthread_mutex_t lock;
+pthread_barrier_t barrier;
 
 double precision = 0.01;
 
@@ -125,17 +126,17 @@ void* thread_process(void* args){
 	int s_index = 0;
 	// Number of cells that can be processed, the area of cells not part of the border.
 	int max_cells = (t_args->source->dimension-2)*(t_args->source->dimension-2);
-	////printf("Thread %ld Started.\n", *t_args->thread_id);
+	////printf("Thread %d Started.\n", t_args->start_index);
 	// If the thread is active, we can start to process cells.
 	while(*t_args->thread_state == thread_active){
 		int finished_cells = 0;
-		////printf("Thread %ld Active.\n", *t_args->thread_id);
+		////printf("Thread %d Active.\n", t_args->start_index);
 		s_index = t_args->start_index; // Set the start index x, depending on the thread number.
 		while(s_index <= max_cells-1){ // While the current index is less than the maximum index.
 			// Convert the index to 2 dimensions.
 			int j = (s_index%(t_args->source->dimension-2))+1;
 			int i = (s_index/(t_args->source->dimension-2))+1;
-			////printf("Thread %ld working on (%d, %d)\n", *t_args->thread_id, j, i);
+			////printf("Thread %d working on (%d, %d)\n", t_args->start_index, j, i);
 			finished_cells += process_square(t_args->source, t_args->destination, i, j);
 			// Increment by the number of threads n, this will be the next cell for the thread to process.
 			s_index += t_args->thread_count;
@@ -146,14 +147,17 @@ void* thread_process(void* args){
 		pthread_mutex_lock(&lock);
 		thread_waiting_counter++;
 		completed_cells += finished_cells;
+		/*printf("Thread %d has lock. It has completed %d cells. There are %d threads waiting.\n",
+			t_args->start_index, finished_cells, thread_waiting_counter);*/
 		pthread_mutex_unlock(&lock);
-		//printf("Thread %ld Waiting.\n", *t_args->thread_id);
+		pthread_barrier_wait(&barrier);
+		////printf("Thread %d Waiting.\n", t_args->start_index);
 		// While the thread is waiting, the main thread will check if the matrix is complete.
 		while(*t_args->thread_state == thread_waiting){ 
 			if (!processing_active){ // Check to see if main has stopped processing.
 				// Then we can break the while loops by changing the thread state to finished.
 				*t_args->thread_state = thread_finished;
-				//printf("Thread %ld Finished.\n", *t_args->thread_id);
+				////printf("Thread %d Finished.\n", t_args->start_index);
 			}
 		}
 	}
@@ -255,6 +259,7 @@ int main(int argc, char* argv[]){
 		int thread_states[thread_count];
 
 		pthread_mutex_init(&lock, NULL);
+		pthread_barrier_init(&barrier, NULL, thread_count+1);
 
 		// Activate each thread, set them all as active.
 		for(int c = 0; c < thread_count; c++){
@@ -266,11 +271,12 @@ int main(int argc, char* argv[]){
 		// While we are processing.
 		while(processing_active){
 			// Check to see if all threads are in the waiting stage
+			pthread_barrier_wait(&barrier);
 			if (thread_waiting_counter == thread_count){
-				//printf("Checking Matrix.\n");
 				
 				// Check to see if the matrix is complete.
 				if (max_cells != completed_cells){
+					
 					// If it's not complete, re-assign our source and destination matrices and set the threads to active.
 					free_matrix(source);
 					source = copy_matrix(destination);
@@ -281,7 +287,8 @@ int main(int argc, char* argv[]){
 						thread_states[c] = thread_active;
 					}
 				} else {
-					//printf("Matrix complete.\n");
+					////printf("Matrix complete.\n");
+					
 					processing_active = 0; // Stop processing.
 				}
 			}
@@ -297,6 +304,7 @@ int main(int argc, char* argv[]){
 		}
 		
 		pthread_mutex_destroy(&lock);
+		pthread_barrier_destroy(&barrier);
 	}else{
 
 		while(completed_cells != max_cells){
