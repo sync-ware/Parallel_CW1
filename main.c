@@ -128,6 +128,7 @@ void* thread_process(void* args){
 	int max_cells = (t_args->source->dimension-2)*(t_args->source->dimension-2);
 	////printf("Thread %d Started.\n", t_args->start_index);
 	// If the thread is active, we can start to process cells.
+	//int active_thread = 1;
 	while(*t_args->thread_state == thread_active){
 		int finished_cells = 0;
 		////printf("Thread %d Active.\n", t_args->start_index);
@@ -143,7 +144,7 @@ void* thread_process(void* args){
 		}
 
 		// Thread will now be placed in a waiting state.
-		*t_args->thread_state = thread_waiting;
+		//*t_args->thread_state = thread_waiting;
 		pthread_mutex_lock(&lock);
 		thread_waiting_counter++;
 		completed_cells += finished_cells;
@@ -151,15 +152,17 @@ void* thread_process(void* args){
 			t_args->start_index, finished_cells, thread_waiting_counter);*/
 		pthread_mutex_unlock(&lock);
 		pthread_barrier_wait(&barrier);
+		pthread_barrier_wait(&barrier);
 		////printf("Thread %d Waiting.\n", t_args->start_index);
 		// While the thread is waiting, the main thread will check if the matrix is complete.
-		while(*t_args->thread_state == thread_waiting){ 
-			if (!processing_active){ // Check to see if main has stopped processing.
-				// Then we can break the while loops by changing the thread state to finished.
-				*t_args->thread_state = thread_finished;
-				////printf("Thread %d Finished.\n", t_args->start_index);
-			}
-		}
+		
+		// if (!processing_active){ // Check to see if main has stopped processing.
+		// 	// Then we can break the while loops by changing the thread state to finished.
+		// 	//*t_args->thread_state = thread_finished;
+		// 	//active_thread = 0;
+		// 	////printf("Thread %d Finished.\n", t_args->start_index);
+		// }
+		
 	}
 }
 
@@ -283,13 +286,16 @@ int main(int argc, char* argv[]){
 					
 					thread_waiting_counter = 0;
 					completed_cells = 0;
-					for(int c = 0; c < thread_count; c++){
-						thread_states[c] = thread_active;
-					}
+					
+					pthread_barrier_wait(&barrier);
 				} else {
 					////printf("Matrix complete.\n");
 					
 					processing_active = 0; // Stop processing.
+					for(int c = 0; c < thread_count; c++){
+						thread_states[c] = thread_finished;
+					}
+					pthread_barrier_wait(&barrier);
 				}
 			}
 		}
